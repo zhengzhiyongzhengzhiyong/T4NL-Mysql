@@ -1,0 +1,275 @@
+﻿<#@ assembly name="System.Core"#>
+<#@ assembly name="System.Data"#>
+<#@ assembly name="..\MySql\T4NL.Model\dll\MySql.Data.dll" #>
+<#@ import namespace="System" #>
+<#@ import namespace="System.Data" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="MySql.Data.MySqlClient" #>
+<#+
+    public class EntityHelper
+    {
+        // 数据库连接
+        public static string connectionString = @"server=ip;uid=root;pwd=password;charset=utf8;";
+ 
+        // 需要解析的数据库
+        public static List<string> databases = new List<string> { "database name" };
+        public static List<Entity> GetEntities()
+        {
+            var list = new List<Entity>();
+            var conn = new MySqlConnection(connectionString);
+            try
+            {
+                conn.Open();
+                var dbs = string.Join("','", databases.ToArray());
+                var cmd = string.Format(@"SELECT TABLE_SCHEMA,TABLE_NAME,COLUMN_NAME,IS_NULLABLE,CHARACTER_MAXIMUM_LENGTH,DATA_TYPE,COLUMN_TYPE,COLUMN_KEY,COLUMN_COMMENT
+                                                 FROM `information_schema`.`COLUMNS`
+                                                 WHERE `information_schema`.`COLUMNS`.`TABLE_SCHEMA` IN ('{0}') ", dbs);
+                using (var reader = MySqlHelper.ExecuteReader(conn, cmd))
+                {
+                    while (reader.Read())
+                    {
+                        var dbName = reader["TABLE_SCHEMA"].ToString();
+                        var tableName = reader["TABLE_NAME"].ToString();
+                        var columnName = reader["COLUMN_NAME"].ToString();
+                        var isNullable = reader["IS_NULLABLE"].ToString().ToLower() == "yes" ? true:false;
+                        var characterMaximumLength = 0;
+                        var dataType = reader["DATA_TYPE"].ToString();
+                        var columnComment = reader["COLUMN_COMMENT"].ToString();
+                        var columnType = reader["COLUMN_TYPE"].ToString();
+                        //PRI 主键 MUL 可以重复
+                        var columnKey = reader["COLUMN_KEY"].ToString();
+
+                        var entity = list.FirstOrDefault(x => x.EntityName == tableName);
+
+                        if (entity == null)
+                        {
+                            entity = new Entity(tableName);
+
+                            if (String.IsNullOrEmpty(entity.DateTimeColumnName))
+                            {
+                                if (dataType.ToLower() == "datetime")
+                                {
+                                    entity.DateTimeColumnName = columnName;
+                                }
+                            }
+
+                            entity.Fields.Add(new Field
+                            {
+                                columnName = columnName,
+                                isNullable = isNullable,
+                                characterMaximumLength =characterMaximumLength,
+                                dataType = GetCLRType(dataType),
+                                columnComment=columnComment,
+                                columnType =columnType,
+                                columnKey=columnKey
+                            });
+
+                            list.Add(entity);
+                        }
+                        else
+                        {
+                            //判断表是否包含时间字段
+                            if (String.IsNullOrEmpty(entity.DateTimeColumnName))
+                            {
+                                if (dataType.ToLower() == "datetime")
+                                {
+                                    entity.DateTimeColumnName = columnName;
+                                }
+                            }
+
+                            entity.Fields.Add(new Field
+                            {
+                                columnName = columnName,
+                                isNullable = isNullable,
+                                characterMaximumLength = characterMaximumLength,
+                                dataType = GetCLRType(dataType),
+                                columnComment = columnComment,
+                                columnType = columnType,
+                                columnKey = columnKey
+                            });
+                        }
+
+                    }
+                }
+            }
+            finally
+            {
+                conn.Close();
+            }
+
+            return list;
+        }
+
+        public static string GetCLRType(string dbType)
+        {
+            switch (dbType)
+            {
+                case "tinyint":
+                case "bigint":
+                case "smallint":
+                case "mediumint":
+                case "int":
+                case "integer":
+                    return "int";
+                case "double":
+                    return "double";
+                case "float":
+                    return "float";
+                case "decimal":
+                    return "decimal";
+                case "numeric":
+                case "real":
+                    return "decimal";
+                case "bit":
+                    return "bool";
+                case "date":
+                case "time":
+                case "year":
+                case "datetime":
+                case "timestamp":
+                    return "DateTime";
+                case "tinyblob":
+                case "blob":
+                case "mediumblob":
+                case "longblog":
+                case "binary":
+                case "varbinary":
+                    return "byte[]";
+                case "char":
+                case "varchar":
+                case "tinytext":
+                case "text":
+                case "mediumtext":
+                case "longtext":
+                    return "string";
+                case "point":
+                case "linestring":
+                case "polygon":
+                case "geometry":
+                case "multipoint":
+                case "multilinestring":
+                case "multipolygon":
+                case "geometrycollection":
+                case "enum":
+                case "set":
+                default:
+                    return dbType;
+            }
+        }
+
+
+        public static string DbTypeLength(string dbType,string Column_type,int length)
+        {
+            switch (dbType)
+            {
+                case "int":
+                    return "Int32,11";
+                case "double":
+                    return "Double";
+                case "float":
+                    return "Float";
+                case "decimal":
+                    return "Decimal";
+                case "bool":
+                    return "Bit";
+                case "DateTime":
+                    return "DateTime";
+                case "byte[]":
+                    return "VarBinary";
+                case "string":
+                    return $"VarChar,255";
+                default:
+                    return dbType;
+            }
+        }
+
+        public static string DbTypeHelper(string dbType)
+        {
+            switch (dbType.ToLower())
+            {
+                case "tinyint":
+                case "bigint":
+                case "smallint":
+                case "mediumint":
+                case "int":
+                case "integer":
+                    return "ToInt_V()";
+                case "double":
+                    return "ToDouble_V()";
+                case "float":
+                case "decimal":
+                case "numeric":
+                case "real":
+                    return "ToDecimal_V()";
+                case "bit":
+                case "bool":
+                    return "ToBoolean_V()";
+                case "date":
+                case "time":
+                case "year":
+                case "datetime":
+                case "timestamp":
+                    return "ToDateTime_V()";
+                case "string":
+                case "tinyblob":
+                case "blob":
+                case "mediumblob":
+                case "longblog":
+                case "binary":
+                case "varbinary":
+                    return "ToString_V()";
+                case "char":
+                case "varchar":
+                case "tinytext":
+                case "text":
+                case "mediumtext":
+                case "longtext":
+                    return "ToString_V()";
+                case "point":
+                case "linestring":
+                case "polygon":
+                case "geometry":
+                case "multipoint":
+                case "multilinestring":
+                case "multipolygon":
+                case "geometrycollection":
+                case "enum":
+                case "set":
+                default:
+                    return dbType;
+            }
+        }
+
+    }
+ 
+     public class Entity
+     {
+         public Entity()
+         {
+             this.Fields = new List<Field>();
+         }
+ 
+         public Entity(string name)
+             : this()
+         {
+             this.EntityName = name;
+         }
+
+		 public string DateTimeColumnName { get; set; }
+ 
+         public string EntityName { get;set; }
+         public List<Field> Fields { get;set; }
+     }
+ 
+    public class Field
+    {
+        public string columnName { get; set; }
+        public bool isNullable { get; set; }
+        public int characterMaximumLength { get; set; }
+        public string dataType { get; set; }
+        public string columnComment { get; set; }
+        public string columnType { get; set; }
+        public string columnKey { get; set; }
+    }
+ #>
